@@ -3,11 +3,11 @@ from collections import deque
 
 class Board:
     def __init__(self, size=19):
-        #colour 0 = empty colour 1 = black colour -1 = white
+        #colour 0 = empty | colour 1 = black | colour -1 = white
         self.size = size
         self.board = np.zeros((size, size), np.uint8)
         #parent stores the parent of each group placed aka the group id
-        self.parent = {}
+        self.parent = {} 
         #group_data stores the other stones and liberties left
         self.group_data = {}
         self.directions = {
@@ -18,14 +18,14 @@ class Board:
         }
 
     def check_in_bounds(self, pos):
-        if pos[0] in range(self.size) and pos[1] in range(self.size):
-            return True
-        return False
+        if pos[0] not in range(self.size) or pos[1] not in range(self.size):
+            raise ValueError(f"Coordinates ({pos[0]}, {pos[1]}) are out of bounds.") 
     
     def place_stone(self, pos, colour):
+        #place stone needs: legal check, suicide check, atari check (super atari check), kill check
+        #sequence: input pos -> check neighbours -> legal check (suicide/ko) -> friendly merge check -> enemy group kill check
+        self.check_in_bounds(self, pos)
         x, y = pos
-        if not self.check_in_bounds(x, y):
-            raise ValueError(f"Coordinates ({x}, {y}) are out of bounds.")
         if colour not in [1, -1]:
             raise ValueError(f"Invalid colour: {colour}. Must be 1 (black) or -1 (white).")
         if self.board[x,y] != 0:
@@ -34,40 +34,32 @@ class Board:
             self.board[x,y] = colour
             pos = (x,y)
             self.parent[pos] = pos
-            liberties, enemies, friends = self.liberties_check(pos)
+            liberties, enemies, friends = self.neighbours_check(pos)
             
             if not liberties and not friends:
                 return False
             
-
+ 
             new_group = {
-                'stones': {pos},
+                'stones': {pos},  
                 'liberties': liberties,
                 'enemy_groups': enemies,
             }
             self.group_data[pos] = new_group
     
     #change to remove group
-    def remove_stone(self, pos):
+    def remove_stones(self, pos):
+        self.check_in_bounds(self, pos)
         x, y = pos
-        if not self.check_in_bounds(x, y):
-            raise ValueError(f"Coordinates ({x}, {y}) are out of bounds.")
         if self.board[x,y] != 0:
             self.board[x,y] = 0
             return True
         return False
-    
-    def liberties_check(self,pos):
-        #with the changes to the group storage I'll have to change how liberties check works.
-        #It should be cheaper since there won't be repeated calculations.
-        #call liberties check in add stone so that groups can be merged.
-        #union needs to be called in liberties check after all the liberties for the stone have been
-        #calculated.
-        #for remove group: do something like liberties check but for all neighbours so that liberties check
-        #is called for them.
+
+    def neighbours_check(self,pos):
+        #get neighbouring positions status
+        self.check_in_bounds(self, pos)
         x, y = pos
-        if not self.check_in_bounds(x, y):
-            raise ValueError(f"Coordinates ({x}, {y}) are out of bounds.")
     
         colour = self.board[x,y]
         opp = -colour
@@ -75,7 +67,7 @@ class Board:
         liberties = set()
         enemies = set()
         friends = set()
-
+        
         for d in self.directions:
             dx, dy = self.directions[d]
             nx, ny = x + dx, y + dy
@@ -83,8 +75,7 @@ class Board:
             if (nx < 0 or ny < 0  or 
                 nx == self.size or ny == self.size
             ):
-                continue
-            #this method gets called when placing a new stone so this new stone should get added to the group of the already existing stone          
+                continue    
             if self.board[nx,ny] == colour:
                 friends.add(self.find_group((nx,ny)))
 
@@ -96,6 +87,17 @@ class Board:
         
         return liberties, enemies, friends
     
+
+    def legal_check(self, pos, colour):
+        pass
+    
+    def ko_check(self, pos, colour):
+        pass
+
+    def kill_check(self, pos, colour):
+        pass
+
+
     def find_group(self,pos):
         #when merging groups only the parent of the group needs to be updated
         if self.parent[pos] != pos:
@@ -119,7 +121,11 @@ class Board:
         #you have two groups that you need to combine as one. This one stone that gets placed need to have two neighbours of the same colour which belong to different groups.
         #I'm not sure where this check would go, whether the union function just carries out the union or maybe the liberties check handles the neighbours.
         #I think the new stone would get put into group 1 or somehing, and then union can be carried out and should calculate the correct liberties.
-        
+    
+    def merge(self, pos, friends):
+        #check if the stone has friends in diff groups, if so merge them into one group
+        pass
+
     #make groups of connected stones
     #check liberties of stones
     #
