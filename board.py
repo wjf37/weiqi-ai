@@ -39,16 +39,26 @@ class Board:
             if not liberties and not friends:
                 return False
             
-
             new_group = {
                 'stones': {pos},
+                'size': 1,
                 'liberties': liberties,
                 'enemy_groups': enemies,
             }
             self.group_data[pos] = new_group
+
+            #if there are friends, merge the groups
+            for friend in friends:
+                final_group = self.union(self.parent[pos], friend)
+                
+            #deal with enemies, check if they still have liberties left, and if not then remove group, then after removing the group run an update on the liberties and enemies for the neighbours.
+            #for dealing with how the enemies handle the new group and or friends. 
+            for enemy in enemies:
+                enemy['liberties'] -= 1
+
     
     #change to remove group
-    def remove_stone(self, pos):
+    def remove_group(self, pos):
         x, y = pos
         if not self.check_in_bounds(x, y):
             raise ValueError(f"Coordinates ({x}, {y}) are out of bounds.")
@@ -104,24 +114,29 @@ class Board:
     
     def union(self, pos1, pos2):
         #union by rank
-        par1 = self.find_group(pos1)
-        par2 = self.find_group(pos2)
+        root1 = self.find_group(pos1)
+        root2 = self.find_group(pos2)
 
-        if par1 == par2:
+        if root1 == root2:
             return
+        if self.group_data[root1]['size'] < self.group_data[root2]['size']:
+            root1, root2 = root2, root1
+
+        self.parent[root2] = root1
+        self.group_data[root1]['stones'].update(self.group_data[root2]['stones'])
+        self.group_data[root1]['liberties'].update(self.group_data['liberties'])
+        self.group_data[root1]['liberties'].difference_update(self.group_data[root2]['stones'])
+        self.group_data[root1]['size'] = self.group_data[root1]['size'] + self.group_data[root2]['size']
+        #handle enemy groups merging.
+        shared_enemies = self.group_data[root1]['enemy_groups'] | self.group_data[root2]['enemy_groups']
+        for enemy in shared_enemies:
+            self.group_data[enemy]['enemy_groups'].discard(root2)
+                
+
+        del self.group_data[root2]
         
-        self.parent[par2] = par1
-        self.group_data[par1]['stones'].update(self.group_data[par2]['stones'])
-        self.group_data[par1]['liberties'].update(self.group_data['liberties'])
-        self.group_data[par1]['liberties'].difference_update(self.group_data[par2]['stones'])
-        del self.group_data[par2]
-        #to calculate the new liberties:
-        #you have two groups that you need to combine as one. This one stone that gets placed need to have two neighbours of the same colour which belong to different groups.
-        #I'm not sure where this check would go, whether the union function just carries out the union or maybe the liberties check handles the neighbours.
-        #I think the new stone would get put into group 1 or somehing, and then union can be carried out and should calculate the correct liberties.
-        
-    #make groups of connected stones
-    #check liberties of stones
+        return root1
+
     #
     #check if in atari
     #check if suicide move
