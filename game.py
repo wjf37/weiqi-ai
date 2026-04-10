@@ -30,8 +30,8 @@ class Game:
             [1,0],
             [-1,0]
         )
-        super_ko_counter: int = 0
-        prev_game_state = self.board.copy()
+        self.super_ko_counter: int = 0
+        self.prev_game_state = self.board.copy()
 
     def check_in_bounds(self, pos: tuple[int, int]) -> None:
         '''
@@ -56,6 +56,8 @@ class Game:
         if self.board[x,y] != 0:
             raise ValueError(f"Coordinates ({x}, {y}) is already occupied.")
 
+        self.ko_check(pos, colour)
+        
         self.board[x,y] = colour
         pos = (x,y)
         self.parent[pos] = pos
@@ -133,11 +135,19 @@ class Game:
         return liberties, enemies, friends
 
 
-    def ko_check(self, pos: tuple[int, int], colour: int):
+    def ko_check(self, pos: tuple[int, int], colour: int) -> None:
         '''
         Checks that a move does not violate the ko rule
         '''
-        
+        new_board_state = self.board.copy()
+        new_board_state[pos[0], pos[1]] = colour
+        if new_board_state == self.prev_game_state:
+            self.super_ko_counter += 1
+            if self.super_ko_counter > 2:
+                ##TODO: deal with superko/winning and losing the game later
+                raise ValueError("Current player loses due to repeated board state (super ko rule).")
+            self.board = self.prev_game_state.copy()
+            raise ValueError("You are not allowed to repeat the previous board state (ko rule).")
         pass
 
     def kill_check(self, pos: tuple[int, int], colour: int):
