@@ -57,14 +57,12 @@ class Game:
             raise ValueError(f"Coordinates ({x}, {y}) is already occupied.")
 
         self.ko_check(pos, colour)
-        
+
         self.board[x,y] = colour
         pos = (x,y)
         self.parent[pos] = pos
         liberties, enemies, friends = self.neighbours_check(pos)
 
-        if not liberties and not friends:
-            pass
 
         new_group = {
             'stones': {pos},
@@ -72,6 +70,9 @@ class Game:
             'enemy_groups': enemies,
         }
         self.group_data[pos] = new_group
+
+        if not enemies and not friends:
+            return
 
         #if there are friends, merge the groups
         for friend in friends:
@@ -145,8 +146,10 @@ class Game:
             self.super_ko_counter += 1
             if self.super_ko_counter > 2:
                 ##TODO: deal with superko/winning and losing the game later
+                self.game_over(colour, False)
                 raise ValueError("Current player loses due to repeated board state (super ko rule).")
             self.board = self.prev_game_state.copy()
+            self.reset_turn()
             raise ValueError("You are not allowed to repeat the previous board state (ko rule).")
         pass
 
@@ -166,7 +169,7 @@ class Game:
             self.parent[pos] = self.find_group(self.parent[pos])
         return self.parent[pos]
 
-    def union(self, pos1, pos2):
+    def union(self, pos1: tuple[int, int], pos2: tuple[int, int]):
         '''
         Unions two groups together
         '''
@@ -202,7 +205,24 @@ class Game:
         #just carries out the union or maybe the liberties check handles the neighbours.
         #I think the new stone would get put into group 1 or somehing, and then
         #union can be carried out and should calculate the correct liberties.
+        
+    def next_turn(self):
+        '''
+        Moves to the next turn
+        '''
+        pass
 
+    def game_over(self, colour: int, isWinner: bool) -> None:
+        '''
+        Ends the game and declares the winner
+        '''
+        pass
+    
+    def reset_turn(self):
+        '''
+        Resets the turn to the previous state, used for undoing moves or handling illegal moves
+        '''
+        pass
     #make groups of connected stones
     #check liberties of stones
     #check if in atari
