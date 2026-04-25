@@ -3,6 +3,13 @@ Currently used to store all of the game logic.
 Splitting it off into separate files might make more sense later
 '''
 import numpy as np
+from dataclasses import dataclass
+
+@dataclass
+class GroupData:
+    stones: set[tuple[int, int]]
+    liberties: set[tuple[int, int]]
+    enemy_groups: set[tuple[int, int]]
 
 class Game:
     '''
@@ -19,19 +26,18 @@ class Game:
         self.size = size
         self.board = np.zeros((size, size), np.uint8)
         #parent stores the parent of each group placed aka the group id
-        next_group_id: int = 0
-        self.parent = {}
         #group_data stores the other stones and liberties left
-        #group data format:
-        self.group_data = {}
-        self.directions = (
-            [0,1],
-            [0,-1],
-            [1,0],
-            [-1,0]
-        )
+        #group data format: set(parent: tuple[int,int], stones: set[tuple[int,int]], liberties: set[tuple[int,int]], enemy_groups: set[tuple[int,int]])
+        self.groups: dict[tuple[int, int], GroupData] = {}
         self.super_ko_counter: int = 0
         self.prev_game_state = self.board.copy()
+    
+    DIRECTIONS: tuple[tuple[int,int], ...] = (
+        (0,1),
+        (0,-1),
+        (1,0),
+        (-1,0)
+    )
 
     def check_in_bounds(self, pos: tuple[int, int]) -> None:
         '''
@@ -57,11 +63,8 @@ class Game:
             raise ValueError(f"Coordinates ({x}, {y}) is already occupied.")
 
         self.ko_check(pos, colour)
-
         self.board[x,y] = colour
-        pos = (x,y)
-        self.parent[pos] = pos
-        liberties, enemies, friends = self.neighbours_check(pos)
+        liberties, enemies, friends, enemies_num = self.neighbours_check(pos)
 
 
         new_group = {
@@ -69,21 +72,30 @@ class Game:
             'liberties': liberties,
             'enemy_groups': enemies,
         }
-        self.group_data[pos] = new_group
+        self.groups[pos] = (
+            GroupData(stones=new_group['stones'],
+                      liberties=new_group['liberties'],
+                      enemy_groups=new_group['enemy_groups']
+                    ))
 
         if not enemies and not friends:
             return
 
         #if there are friends, merge the groups
         for friend in friends:
-            self.union(self.parent[pos], friend)
+            self.union(pos, friend)
+
+        #TODO: suicide check
+        #required data: parent and group data for liberties of current group and the status of the enemies.
+        #check if the current group has any liberties left with this move and if there are no liberties
+        #then check for the liberties of the enemy groups that are neighbours. 
+        
+
 
         #deal with enemies, check if they still have liberties left, and if not
         #then remove group, then after removing the group run an update on the
         #liberties and enemies for the neighbours.
         #for dealing with how the enemies handle the new group and or friends.
-        for enemy in enemies:
-            enemy['liberties'] -= 1
 
 
     #change to remove group
@@ -99,7 +111,7 @@ class Game:
             return True
         return False
 
-    def neighbours_check(self, pos: tuple[int, int]):
+    def neighbours_check(self, pos: tuple[int, int]) -> tuple[set[tuple[int, int]], set[tuple[int, int]], set[tuple[int, int]], int]:
         '''
         Used to check the neighbouring positions of a stone, to determine the liberties,
         and the enemy and friendly groups next to the stone and how they will be affected
@@ -116,8 +128,11 @@ class Game:
         liberties = set()
         enemies = set()
         friends = set()
+        #for the suicide check later to check if the stone being placed here is a
+        #killing move
+        enemies_num = 0
 
-        for dx, dy in self.directions:
+        for dx, dy in Game.DIRECTIONS:
             nx, ny = x + dx, y + dy
             ncoords = (nx,ny)
             if (nx < 0 or ny < 0  or
@@ -129,16 +144,18 @@ class Game:
 
             elif self.board[nx,ny] == opp:
                 enemies.add(self.find_group((nx,ny)))
+                enemies_num += 1
 
             else:
                 liberties.add((ncoords))
 
-        return liberties, enemies, friends
+        return liberties, enemies, friends, enemies_num
 
 
     def ko_check(self, pos: tuple[int, int], colour: int) -> None:
         '''
-        Checks that a move does not violate the ko rule
+        Checks that a move does not violate the ko rule y returning to the previous board state
+        and also checks for super ko rule violation where the board state is repeated three times
         '''
         new_board_state = self.board.copy()
         new_board_state[pos[0], pos[1]] = colour
@@ -153,6 +170,12 @@ class Game:
             raise ValueError("You are not allowed to repeat the previous board state (ko rule).")
         pass
 
+    def suicide_check(self, pos: tuple[int, int], colour: int):
+        '''
+        Checks if the move takes all liberties of a group without killing an enemy group
+        '''
+
+
     def kill_check(self, pos: tuple[int, int], colour: int):
         '''
         Checks if the move kills any enemy groups to override the
@@ -160,27 +183,26 @@ class Game:
         '''
         pass
 
-    def find_group(self,pos: tuple[int, int]):
+    def find_group(self, pos: tuple[int, int]):
         '''
         Finds the group to which a stone belongs to
         '''
-        #when merging groups only the parent of the group needs to be updated
-        if self.parent[pos] != pos:
-            self.parent[pos] = self.find_group(self.parent[pos])
-        return self.parent[pos]
+        #run initial search on the parents then go for a deeper search on the stones
+        
 
     def union(self, pos1: tuple[int, int], pos2: tuple[int, int]):
         '''
         Unions two groups together
         '''
+        colour = self.board[pos1]
         #union by rank
         root1 = self.find_group(pos1)
         root2 = self.find_group(pos2)
 
         if root1 == root2:
             return
-        group1 = self.group_data[root1]
-        group2 = self.group_data[root2]
+        group1 = self.groups[root1]
+        group2 = self.groups[root2]
 
         if group1['size'] < group2['size']:
             root1, root2 = root2, root1
@@ -193,9 +215,9 @@ class Game:
         #handle enemy groups merging.
         shared_enemies = group1['enemy_groups'] | group2['enemy_groups']
         for enemy in shared_enemies:
-            self.group_data[enemy]['enemy_groups'].discard(root2)
+            self.groups[enemy]['enemy_groups'].discard(root2)
 
-        del self.group_data[root2]
+        del self.groups[root2]
 
         #to calculate the new liberties:
         #you have two groups that you need to combine as one.
@@ -205,24 +227,26 @@ class Game:
         #just carries out the union or maybe the liberties check handles the neighbours.
         #I think the new stone would get put into group 1 or somehing, and then
         #union can be carried out and should calculate the correct liberties.
-        
+    
+    def update_group(self, parent: tuple[int, int]):
+        '''
+        Updates the group data for a given group, used after placing a stone or removing a group
+        '''
+
     def next_turn(self):
         '''
         Moves to the next turn
         '''
-        pass
 
     def game_over(self, colour: int, isWinner: bool) -> None:
         '''
         Ends the game and declares the winner
         '''
-        pass
     
     def reset_turn(self):
         '''
         Resets the turn to the previous state, used for undoing moves or handling illegal moves
         '''
-        pass
     #make groups of connected stones
     #check liberties of stones
     #check if in atari
