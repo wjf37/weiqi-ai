@@ -29,6 +29,7 @@ class Game:
         #group_data stores the other stones and liberties left
         #group data format: set(parent: tuple[int,int], stones: set[tuple[int,int]], liberties: set[tuple[int,int]], enemy_groups: set[tuple[int,int]])
         self.groups: dict[tuple[int, int], GroupData] = {}
+        self.stone_group_dict: dict[tuple[int, int], tuple[int, int]] = {}
         self.super_ko_counter: int = 0
         self.prev_game_state = self.board.copy()
     
@@ -66,17 +67,13 @@ class Game:
         self.board[x,y] = colour
         liberties, enemies, friends, enemies_num = self.neighbours_check(pos)
 
-
-        new_group = {
-            'stones': {pos},
-            'liberties': liberties,
-            'enemy_groups': enemies,
-        }
         self.groups[pos] = (
-            GroupData(stones=new_group['stones'],
-                      liberties=new_group['liberties'],
-                      enemy_groups=new_group['enemy_groups']
+            GroupData(stones={pos},
+                      liberties=liberties,
+                      enemy_groups=enemies
                     ))
+
+        self.stone_group_dict[pos] = pos
 
         if not enemies and not friends:
             return
@@ -196,26 +193,26 @@ class Game:
         '''
         colour = self.board[pos1]
         #union by rank
-        root1 = self.find_group(pos1)
-        root2 = self.find_group(pos2)
+        root1 = self.stone_group_dict[pos1]
+        root2 = self.stone_group_dict[pos2]
 
         if root1 == root2:
             return
         group1 = self.groups[root1]
         group2 = self.groups[root2]
 
-        if group1['size'] < group2['size']:
+        if len(group1.stones) < len(group2.stones):
             root1, root2 = root2, root1
 
-        self.parent[root2] = root1
-        group1['stones'].update(group2['stones'])
-        group1['liberties'].update(group2['liberties'])
-        group1['liberties'].difference_update(group2['stones'])
-        group1['size'] = group1['size'] + group2['size']
+        #merge the properties of group 2 into group 1, making sure to calculate the new liberties accurately
+        group1.stones.update(group2.stones)
+        #TODO: double check liberties to make sure it is calculating properly
+        group1.liberties.update(group2.liberties)
+        group1.liberties.difference_update(group2.stones)
         #handle enemy groups merging.
-        shared_enemies = group1['enemy_groups'] | group2['enemy_groups']
+        shared_enemies = group1.enemy_groups | group2.enemy_groups
         for enemy in shared_enemies:
-            self.groups[enemy]['enemy_groups'].discard(root2)
+            self.groups[enemy].enemy_groups.discard(root2)
 
         del self.groups[root2]
 
