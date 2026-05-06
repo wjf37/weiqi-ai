@@ -63,6 +63,8 @@ class Game:
         if self.board[x,y] != 0:
             raise ValueError(f"Coordinates ({x}, {y}) is already occupied.")
 
+        new_stone: tuple[int, int] = pos
+
         self.ko_check(pos, colour)
         self.board[x,y] = colour
         liberties, enemies, friends, enemies_num = self.neighbours_check(pos)
@@ -80,7 +82,7 @@ class Game:
 
         #if there are friends, merge the groups
         for friend in friends:
-            self.union(pos, friend)
+            self.union(pos, friend, new_stone)
 
         #TODO: suicide check
         #required data: parent and group data for liberties of current group and the status of the enemies.
@@ -187,7 +189,7 @@ class Game:
         #run initial search on the parents then go for a deeper search on the stones
         
 
-    def union(self, pos1: tuple[int, int], pos2: tuple[int, int]):
+    def union(self, pos1: tuple[int, int], pos2: tuple[int, int], new_stone: tuple[int, int]):
         '''
         Unions two groups together
         '''
@@ -207,23 +209,15 @@ class Game:
         #merge the properties of group 2 into group 1, making sure to calculate the new liberties accurately
         group1.stones.update(group2.stones)
         #TODO: double check liberties to make sure it is calculating properly
+        #the only liberty that needs updating specifically is the last stone that was added
         group1.liberties.update(group2.liberties)
-        group1.liberties.difference_update(group2.stones)
+        group1.liberties.discard(new_stone)
         #handle enemy groups merging.
         shared_enemies = group1.enemy_groups | group2.enemy_groups
         for enemy in shared_enemies:
             self.groups[enemy].enemy_groups.discard(root2)
 
         del self.groups[root2]
-
-        #to calculate the new liberties:
-        #you have two groups that you need to combine as one.
-        #This one stone that gets placed need to have two neighbours
-        #of the same colour which belong to different groups.
-        #I'm not sure where this check would go, whether the union function
-        #just carries out the union or maybe the liberties check handles the neighbours.
-        #I think the new stone would get put into group 1 or somehing, and then
-        #union can be carried out and should calculate the correct liberties.
     
     def update_group(self, parent: tuple[int, int]):
         '''
