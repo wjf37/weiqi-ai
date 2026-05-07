@@ -53,10 +53,9 @@ class Game:
         Logic for placing a stone on the board, with error checking for
         illegal moves. Start of the sequence of checks and updates for placing a stone.
         '''
-        #place stone needs: legal check, suicide check, atari check (super atari check), kill check
-        #sequence: input pos -> check neighbours -> legal check (suicide/ko)
-        #  -> friendly merge check -> enemy group kill check
         self.check_in_bounds(pos)
+        will_kill = False
+        dead_groups = set(tuple[int, int])
         x, y = pos
         if colour not in [1, -1]:
             raise ValueError(f"Invalid colour: {colour}. Must be 1 (black) or -1 (white).")
@@ -82,14 +81,18 @@ class Game:
 
         #if there are friends, merge the groups
         for friend in friends:
-            self.union(pos, friend, new_stone)
+            main_group = self.union(pos, friend, new_stone)
 
-        #TODO: suicide check
-        #required data: parent and group data for liberties of current group and the status of the enemies.
-        #check if the current group has any liberties left with this move and if there are no liberties
-        #then check for the liberties of the enemy groups that are neighbours. 
-        
+        for enemy in enemies:
+            enemy_group = self.groups[enemy]
+            enemy_group.enemy_groups.add(main_group)
+            enemy_group.liberties.discard(pos)
+            if enemy_group.liberties <= 0:
+                will_kill = True
+                dead_groups.add(enemy)
 
+        self.pass_suicide_check(main_group, will_kill)
+        #TODO: carry out remove stones on the enemy groups 
 
         #deal with enemies, check if they still have liberties left, and if not
         #then remove group, then after removing the group run an update on the
@@ -98,26 +101,31 @@ class Game:
 
 
     #change to remove group
-    def remove_stones(self, pos: tuple[int, int]) -> bool:
+    def remove_stones(self, pos: tuple[int, int]):
         '''
-        Logic for removing a stone/group from the board
+        Logic for removing a group from the board + cleaup
         '''
         # TODO: finish function
         self.check_in_bounds(pos)
         x, y = pos
         if self.board[x,y] != 0:
             self.board[x,y] = 0
-            return True
-        return False
-
-    def neighbours_check(self, pos: tuple[int, int]) -> tuple[set[tuple[int, int]], set[tuple[int, int]], set[tuple[int, int]], int]:
+            
+    def neighbours_check(
+            self,
+            pos: tuple[int, int]
+        ) -> tuple[
+            set[tuple[int, int]],
+            set[tuple[int, int]],
+            set[tuple[int, int]],
+            int
+        ]:
         '''
         Used to check the neighbouring positions of a stone, to determine the liberties,
         and the enemy and friendly groups next to the stone and how they will be affected
         by the new stone.
         '''
         #get neighbouring positions status
-        # TODO: Figure out structure of groups and explicitly type the return value
         self.check_in_bounds(pos)
         x, y = pos
 
@@ -169,18 +177,13 @@ class Game:
             raise ValueError("You are not allowed to repeat the previous board state (ko rule).")
         pass
 
-    def suicide_check(self, pos: tuple[int, int], colour: int):
+    def pass_suicide_check(self, pos: tuple[int, int], will_kill: bool):
         '''
         Checks if the move takes all liberties of a group without killing an enemy group
         '''
-
-
-    def kill_check(self, pos: tuple[int, int], colour: int):
-        '''
-        Checks if the move kills any enemy groups to override the
-        suicide rule
-        '''
-        pass
+        if self.groups[pos].liberties <= 0 and not will_kill:
+            return False
+        return True
 
     def find_group(self, pos: tuple[int, int]):
         '''
@@ -189,7 +192,7 @@ class Game:
         #run initial search on the parents then go for a deeper search on the stones
         
 
-    def union(self, pos1: tuple[int, int], pos2: tuple[int, int], new_stone: tuple[int, int]):
+    def union(self, pos1: tuple[int, int], pos2: tuple[int, int], new_stone: tuple[int, int]) -> tuple[int, int]:
         '''
         Unions two groups together
         '''
@@ -208,7 +211,6 @@ class Game:
 
         #merge the properties of group 2 into group 1, making sure to calculate the new liberties accurately
         group1.stones.update(group2.stones)
-        #TODO: double check liberties to make sure it is calculating properly
         #the only liberty that needs updating specifically is the last stone that was added
         group1.liberties.update(group2.liberties)
         group1.liberties.discard(new_stone)
@@ -218,6 +220,8 @@ class Game:
             self.groups[enemy].enemy_groups.discard(root2)
 
         del self.groups[root2]
+
+        return root1
     
     def update_group(self, parent: tuple[int, int]):
         '''
