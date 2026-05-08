@@ -3,6 +3,7 @@ Currently used to store all of the game logic.
 Splitting it off into separate files might make more sense later
 '''
 import numpy as np
+from enum import Enum
 from dataclasses import dataclass
 
 @dataclass
@@ -25,13 +26,12 @@ class Game:
         #colour 0 = empty | colour 1 = black | colour -1 = white
         self.size = size
         self.board = np.zeros((size, size), np.uint8)
-        #parent stores the parent of each group placed aka the group id
-        #group_data stores the other stones and liberties left
-        #group data format: set(parent: tuple[int,int], stones: set[tuple[int,int]], liberties: set[tuple[int,int]], enemy_groups: set[tuple[int,int]])
         self.groups: dict[tuple[int, int], GroupData] = {}
         self.stone_group_dict: dict[tuple[int, int], tuple[int, int]] = {}
-        self.super_ko_counter: int = 0
+        self.super_ko_counter = 0
         self.prev_game_state = self.board.copy()
+        self.white_score = 0
+        self.black_score = 0
     
     DIRECTIONS: tuple[tuple[int,int], ...] = (
         (0,1),
@@ -46,7 +46,7 @@ class Game:
         the bounds of the board, if not then raise an error
         '''
         if pos[0] not in range(self.size) or pos[1] not in range(self.size):
-            raise ValueError(f"Coordinates ({pos[0]}, {pos[1]}) are out of bounds.")
+            raise ValueError(f"Point ({pos[0]}, {pos[1]}) is out of bounds.")
 
     def place_stone(self, pos: tuple[int, int], colour: int) -> None:
         '''
@@ -56,11 +56,12 @@ class Game:
         self.check_in_bounds(pos)
         will_kill = False
         dead_groups = set(tuple[int, int])
+        prisoners = 0
         x, y = pos
         if colour not in [1, -1]:
             raise ValueError(f"Invalid colour: {colour}. Must be 1 (black) or -1 (white).")
         if self.board[x,y] != 0:
-            raise ValueError(f"Coordinates ({x}, {y}) is already occupied.")
+            raise ValueError(f"Point({x}, {y}) is already occupied.")
 
         new_stone: tuple[int, int] = pos
 
@@ -91,27 +92,22 @@ class Game:
                 will_kill = True
                 dead_groups.add(enemy)
 
-        self.pass_suicide_check(main_group, will_kill)
-        #TODO: carry out remove stones on the enemy groups 
-
-        #deal with enemies, check if they still have liberties left, and if not
-        #then remove group, then after removing the group run an update on the
-        #liberties and enemies for the neighbours.
-        #for dealing with how the enemies handle the new group and or friends.
-
+        if  not self.pass_suicide_check(main_group, will_kill):
+            self.reset_turn()
+        for group in dead_groups:
+            prisoners += self.remove_stones(group)
+        if colour == 1:
+            self.black_score += prisoners
+        else:
+            self.white_score += prisoners
 
     #change to remove group
-    def remove_stones(self, pos: tuple[int, int]):
+    def remove_stones(self, pos: tuple[int, int]) -> int:
         '''
         Logic for removing a group from the board + cleaup
         '''
-        # TODO: finish function
-        #set the stone positions in the group to 0
-        #make a simpler liberties check function to refresh the liberties
-        #of the killing groups
-        #remove this group from enemy groups for the killing groups
-
         dead_group = self.groups[pos]
+        prisoners = len(dead_group.stones)
         for stone in dead_group.stones:
             self.board[stone] = 0
         
@@ -120,6 +116,7 @@ class Game:
             self.groups[group].enemy_groups.discard(pos)
             self.update_liberties(group)
         del self.groups[pos]
+        return prisoners
 
     def neighbours_check(
             self,
@@ -187,20 +184,13 @@ class Game:
             raise ValueError("You are not allowed to repeat the previous board state (ko rule).")
         pass
 
-    def pass_suicide_check(self, pos: tuple[int, int], will_kill: bool):
+    def pass_suicide_check(self, pos: tuple[int, int], will_kill: bool) -> bool:
         '''
         Checks if the move takes all liberties of a group without killing an enemy group
         '''
         if self.groups[pos].liberties <= 0 and not will_kill:
             return False
         return True
-
-    def find_group(self, pos: tuple[int, int]):
-        '''
-        Finds the group to which a stone belongs to
-        '''
-        #run initial search on the parents then go for a deeper search on the stones
-        
 
     def union(self, pos1: tuple[int, int], pos2: tuple[int, int], new_stone: tuple[int, int]) -> tuple[int, int]:
         '''
@@ -233,7 +223,7 @@ class Game:
 
         return root1
     
-    def update_liberties(self, pos: tuple[int, int]):
+    def update_liberties(self, pos: tuple[int, int]) -> None:
         '''
         Simple liberties updater for after a group is dead
         '''
@@ -253,7 +243,7 @@ class Game:
             if self.board[nx,ny] == 0:
                 cur_group.liberties.add((ncoords))
 
-    def next_turn(self):
+    def next_turn(self) -> None:
         '''
         Moves to the next turn
         '''
@@ -263,7 +253,7 @@ class Game:
         Ends the game and declares the winner
         '''
     
-    def reset_turn(self):
+    def reset_turn(self) -> None:
         '''
         Resets the turn to the previous state, used for undoing moves or handling illegal moves
         '''
