@@ -106,11 +106,21 @@ class Game:
         Logic for removing a group from the board + cleaup
         '''
         # TODO: finish function
-        self.check_in_bounds(pos)
-        x, y = pos
-        if self.board[x,y] != 0:
-            self.board[x,y] = 0
-            
+        #set the stone positions in the group to 0
+        #make a simpler liberties check function to refresh the liberties
+        #of the killing groups
+        #remove this group from enemy groups for the killing groups
+
+        dead_group = self.groups[pos]
+        for stone in dead_group.stones:
+            self.board[stone] = 0
+        
+        groups_to_update = dead_group.enemy_groups
+        for group in groups_to_update:
+            self.groups[group].enemy_groups.discard(pos)
+            self.update_liberties(group)
+        del self.groups[pos]
+
     def neighbours_check(
             self,
             pos: tuple[int, int]
@@ -223,10 +233,25 @@ class Game:
 
         return root1
     
-    def update_group(self, parent: tuple[int, int]):
+    def update_liberties(self, pos: tuple[int, int]):
         '''
-        Updates the group data for a given group, used after placing a stone or removing a group
+        Simple liberties updater for after a group is dead
         '''
+        x, y = pos
+        colour = self.board[x, y]
+        opp = -colour
+        cur_group = self.groups[pos]
+
+        for dx, dy in Game.DIRECTIONS:
+            nx, ny = x + dx, y + dy
+            ncoords = (nx,ny)
+            if (nx < 0 or ny < 0  or
+                nx == self.size or ny == self.size
+            ):
+                continue
+
+            if self.board[nx,ny] == 0:
+                cur_group.liberties.add((ncoords))
 
     def next_turn(self):
         '''
