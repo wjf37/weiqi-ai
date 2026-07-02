@@ -2,15 +2,23 @@
 Currently used to store all of the game logic. 
 Splitting it off into separate files might make more sense later
 '''
+from enum import Enum, auto
+from typing import List
+
 import numpy as np
-from enum import Enum
 from dataclasses import dataclass
+from turn_logic import PlayTurn
 
 @dataclass
 class GroupData:
     stones: set[tuple[int, int]]
     liberties: set[tuple[int, int]]
     enemy_groups: set[tuple[int, int]]
+
+class GameState(Enum):
+    ONGOING = auto()
+    FIN_SCORE = auto()
+    FIN_RESIGN = auto()
 
 class Game:
     '''
@@ -25,54 +33,66 @@ class Game:
         '''
         #colour 0 = empty | colour 1 = black | colour -1 = white
         self.size = size
-        self.board = np.zeros((size, size), np.uint8)
+        self.board = [[0 for i in range(size)] for j in range(size)]
         self.groups: dict[tuple[int, int], GroupData] = {}
         self.stone_group_dict: dict[tuple[int, int], tuple[int, int]] = {}
         self.super_ko_counter = 0
         self.prev_game_state = self.board.copy()
         self.white_score = 0
         self.black_score = 0
+        self.pass_counter = 0
+        self.current_player = 1
+        self.turn_counter = 1
+        #turn data == pos, colour
+        self.turn_data: List[tuple[int, int, int]] = []
+        self.state = GameState.ONGOING
+
+    @property
+    def is_over(self) -> bool:
+        '''
+        Returns True if the game is over, False otherwise
+        '''
+        return self.state != GameState.ONGOING
     
-    DIRECTIONS: tuple[tuple[int,int], ...] = (
-        (0,1),
-        (0,-1),
-        (1,0),
-        (-1,0)
-    )
-
-    def check_in_bounds(self, pos: tuple[int, int]) -> None:
-        '''
-        Simple function to check that the coords are within
-        the bounds of the board, if not then raise an error
-        '''
-        if pos[0] not in range(self.size) or pos[1] not in range(self.size):
-            raise ValueError(f"Point ({pos[0]}, {pos[1]}) is out of bounds.")
-
     def place_stone(self, pos: tuple[int, int], colour: int) -> None:
         '''
         Logic for placing a stone on the board, with error checking for
         illegal moves. Start of the sequence of checks and updates for placing a stone.
         '''
-        self.check_in_bounds(pos)
+        if self.is_over:
+            raise ValueError("Game is over, cannot place stone.")
+        prisoners = 0
+        # Used to check if this turn will kill any enemy groups
         will_kill = False
+        # Collect groups to kill this turn for easy removal and prisoner counting
         dead_groups = set(tuple[int, int])
         prisoners = 0
         x, y = pos
+
         if colour not in [1, -1]:
             raise ValueError(f"Invalid colour: {colour}. Must be 1 (black) or -1 (white).")
         if self.board[x,y] != 0:
             raise ValueError(f"Point({x}, {y}) is already occupied.")
 
+        # Keep a copy of the stone being placed for updating the liberties later
         new_stone: tuple[int, int] = pos
 
-        self.ko_check(pos, colour)
+        turn = PlayTurn(self.board, self.groups, self.stone_group_dict)
+
+        if turn.ko_check():
+            self.super_ko_counter += 1
+            if self.super_ko_counter >= 3:
+                self.resign(colour)
+                raise ValueError("Current player loses due to repeated board state (super ko rule).")
+            self.reset_turn()
+
         self.board[x,y] = colour
-        liberties, enemies, friends, enemies_num = self.neighbours_check(pos)
+        liberties, enemies, friends = turn.neighbours_check()
 
         self.groups[pos] = (
             GroupData(stones={pos},
-                      liberties=liberties,
-                      enemy_groups=enemies
+                        liberties=liberties,
+                        enemy_groups=enemies
                     ))
 
         self.stone_group_dict[pos] = pos
@@ -82,7 +102,7 @@ class Game:
 
         #if there are friends, merge the groups
         for friend in friends:
-            main_group = self.union(pos, friend, new_stone)
+            main_group = turn.union(pos, friend, new_stone)
 
         for enemy in enemies:
             enemy_group = self.groups[enemy]
@@ -92,7 +112,7 @@ class Game:
                 will_kill = True
                 dead_groups.add(enemy)
 
-        if  not self.pass_suicide_check(main_group, will_kill):
+        if not turn.pass_suicide_check(main_group, will_kill):
             self.reset_turn()
         for group in dead_groups:
             prisoners += self.remove_stones(group)
@@ -101,165 +121,63 @@ class Game:
         else:
             self.white_score += prisoners
 
-    #change to remove group
-    def remove_stones(self, pos: tuple[int, int]) -> int:
+        self.prev_game_state = self.board.copy()
+
+        self.board, self.groups, self.stone_group_dict = turn.return_values()
+        self.turn_data.append((pos, colour))
+
+    def check_in_bounds(self, pos: tuple[int, int]) -> None:
         '''
-        Logic for removing a group from the board + cleaup
+        Simple function to check that the coords are within
+        the bounds of the board, if not then raise an error
         '''
-        dead_group = self.groups[pos]
-        prisoners = len(dead_group.stones)
-        for stone in dead_group.stones:
-            self.board[stone] = 0
-        
-        groups_to_update = dead_group.enemy_groups
-        for group in groups_to_update:
-            self.groups[group].enemy_groups.discard(pos)
-            self.update_liberties(group)
-        del self.groups[pos]
-        return prisoners
-
-    def neighbours_check(
-            self,
-            pos: tuple[int, int]
-        ) -> tuple[
-            set[tuple[int, int]],
-            set[tuple[int, int]],
-            set[tuple[int, int]],
-            int
-        ]:
-        '''
-        Used to check the neighbouring positions of a stone, to determine the liberties,
-        and the enemy and friendly groups next to the stone and how they will be affected
-        by the new stone.
-        '''
-        #get neighbouring positions status
-        self.check_in_bounds(pos)
-        x, y = pos
-
-        colour = self.board[x,y]
-        opp = -colour
-
-        liberties = set()
-        enemies = set()
-        friends = set()
-        #for the suicide check later to check if the stone being placed here is a
-        #killing move
-        enemies_num = 0
-
-        for dx, dy in Game.DIRECTIONS:
-            nx, ny = x + dx, y + dy
-            ncoords = (nx,ny)
-            if (nx < 0 or ny < 0  or
-                nx == self.size or ny == self.size
-            ):
-                continue
-            if self.board[nx,ny] == colour:
-                friends.add(self.find_group((nx,ny)))
-
-            elif self.board[nx,ny] == opp:
-                enemies.add(self.find_group((nx,ny)))
-                enemies_num += 1
-
-            else:
-                liberties.add((ncoords))
-
-        return liberties, enemies, friends, enemies_num
-
-
-    def ko_check(self, pos: tuple[int, int], colour: int) -> None:
-        '''
-        Checks that a move does not violate the ko rule y returning to the previous board state
-        and also checks for super ko rule violation where the board state is repeated three times
-        '''
-        new_board_state = self.board.copy()
-        new_board_state[pos[0], pos[1]] = colour
-        if new_board_state == self.prev_game_state:
-            self.super_ko_counter += 1
-            if self.super_ko_counter > 2:
-                ##TODO: deal with superko/winning and losing the game later
-                self.game_over(colour, False)
-                raise ValueError("Current player loses due to repeated board state (super ko rule).")
-            self.board = self.prev_game_state.copy()
-            self.reset_turn()
-            raise ValueError("You are not allowed to repeat the previous board state (ko rule).")
-        pass
-
-    def pass_suicide_check(self, pos: tuple[int, int], will_kill: bool) -> bool:
-        '''
-        Checks if the move takes all liberties of a group without killing an enemy group
-        '''
-        if self.groups[pos].liberties <= 0 and not will_kill:
-            return False
-        return True
-
-    def union(self, pos1: tuple[int, int], pos2: tuple[int, int], new_stone: tuple[int, int]) -> tuple[int, int]:
-        '''
-        Unions two groups together
-        '''
-        colour = self.board[pos1]
-        #union by rank
-        root1 = self.stone_group_dict[pos1]
-        root2 = self.stone_group_dict[pos2]
-
-        if root1 == root2:
-            return
-        group1 = self.groups[root1]
-        group2 = self.groups[root2]
-
-        if len(group1.stones) < len(group2.stones):
-            root1, root2 = root2, root1
-
-        #merge the properties of group 2 into group 1, making sure to calculate the new liberties accurately
-        group1.stones.update(group2.stones)
-        #the only liberty that needs updating specifically is the last stone that was added
-        group1.liberties.update(group2.liberties)
-        group1.liberties.discard(new_stone)
-        #handle enemy groups merging.
-        shared_enemies = group1.enemy_groups | group2.enemy_groups
-        for enemy in shared_enemies:
-            self.groups[enemy].enemy_groups.discard(root2)
-
-        del self.groups[root2]
-
-        return root1
-    
-    def update_liberties(self, pos: tuple[int, int]) -> None:
-        '''
-        Simple liberties updater for after a group is dead
-        '''
-        x, y = pos
-        colour = self.board[x, y]
-        opp = -colour
-        cur_group = self.groups[pos]
-
-        for dx, dy in Game.DIRECTIONS:
-            nx, ny = x + dx, y + dy
-            ncoords = (nx,ny)
-            if (nx < 0 or ny < 0  or
-                nx == self.size or ny == self.size
-            ):
-                continue
-
-            if self.board[nx,ny] == 0:
-                cur_group.liberties.add((ncoords))
+        if pos[0] not in range(self.size) or pos[1] not in range(self.size):
+            raise ValueError(f"Point ({pos[0]}, {pos[1]}) is out of bounds.")
 
     def next_turn(self) -> None:
         '''
-        Moves to the next turn
+        Moves to the next turn.
         '''
+        self.current_player = -self.current_player
+        self.turn_counter += 1
+        self.pass_counter = 0
+        self.super_ko_counter = 0
 
-    def game_over(self, colour: int, isWinner: bool) -> None:
+    def resign(self, colour: int) -> None:
         '''
-        Ends the game and declares the winner
+        Ends the game, makes the other player the winner
         '''
-    
+        self.game_over(-colour)
+        self.state = GameState.FIN_RESIGN
+
     def reset_turn(self) -> None:
         '''
         Resets the turn to the previous state, used for undoing moves or handling illegal moves
         '''
-    #make groups of connected stones
-    #check liberties of stones
-    #check if in atari
-    #check if suicide move
-    #check for repeated board state
-    #figure out a basic gui
+        self.board = self.prev_game_state.copy()
+
+    def pass_turn(self) -> None:
+        '''
+        Handles the logic for passing a turn, including checking for consecutive passes to end the game
+        '''
+        turn = PlayTurn(self.board, None, None)
+        self.prev_game_state = self.board.copy()
+        self.pass_counter += 1
+        if self.pass_counter >= 2:
+            self.state = GameState.FINISHED_SCORE 
+            self.calculate_score()
+
+    def calculate_score(self) -> None:
+        '''
+        Calculates the score for both players at the end of the game, including territory and prisoners
+        '''
+
+    def game_over(self, winner: int) -> None:
+        '''
+        Ends the game, calculates score and declares the winner. Saves the turn data.
+        '''
+    
+    def review(self) -> None:
+        '''
+        Allows for reviewing the game after it has ended, using the stored turn data
+        '''
