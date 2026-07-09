@@ -20,6 +20,13 @@ class GameState(Enum):
     FIN_SCORE = auto()
     FIN_RESIGN = auto()
 
+DIRECTIONS: tuple[tuple[int,int], ...] = (
+        (0,1),
+        (0,-1),
+        (1,0),
+        (-1,0)
+    )
+
 class Game:
     '''
     Contains all the game logic in relation to the board
@@ -171,11 +178,43 @@ class Game:
         '''
         Calculates the score for both players at the end of the game, including territory and prisoners
         '''
+        #for end of game clear territory calculation
+
+    def flood_fill(self, pos: tuple[int, int]) -> tuple[set[tuple[int, int]], tuple[bool, bool]]:
+        '''
+        Flood fill algorithm to determine the territory controlled by a player.
+        Returns a set of positions that are part of the territory and a tuple indicating boundary colors.
+        '''
+        seen: set[tuple[int, int]] = set()
+        empty: set[tuple[int, int]] = set()
+        stack: list[tuple[int, int]] = [pos]
+        boundaries = (False, False)  # (has_black_boundary, has_white_boundary)
+
+        while stack:
+            current = stack.pop()
+            seen.add(current)
+            if current in seen:
+                continue
+            cur_x, cur_y = current
+            if self.board[cur_x, cur_y] == 0:
+                empty.add(current)
+                for dx, dy in DIRECTIONS:
+                    neighbour = (cur_x + dx, cur_y + dy)
+                    if neighbour not in seen and 0 <= neighbour[0] < self.size and 0 <= neighbour[1] < self.size:
+                        stack.append(neighbour)
+                        seen.add(neighbour)
+            else:
+                if self.board[cur_x, cur_y] == 1:
+                    boundaries = (True, boundaries[1])
+                elif self.board[cur_x, cur_y] == -1:
+                    boundaries = (boundaries[0], True)
+        return empty, boundaries
+
 
     def game_over(self, winner: int) -> None:
         '''
         Ends the game, calculates score and declares the winner. Saves the turn data.
-        '''
+        ''' 
     
     def review(self) -> None:
         '''
