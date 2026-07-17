@@ -122,7 +122,7 @@ class Game:
         if not turn.pass_suicide_check(main_group, will_kill):
             self.reset_turn()
         for group in dead_groups:
-            prisoners += self.remove_stones(group)
+            prisoners += turn.remove_stones(group)
         if colour == 1:
             self.black_score += prisoners
         else:
@@ -174,10 +174,25 @@ class Game:
             self.state = GameState.FINISHED_SCORE 
             self.calculate_score()
 
-    def calculate_score(self) -> None:
+    def calculate_score_ja(self) -> None:
         '''
-        Calculates the score for both players at the end of the game, including territory and prisoners
+        Calculates the score for both players at the end of the game using Japanese scoring,
+        including territory and prisoners
         '''
+        seen_points: set[tuple[int, int]] = set()
+        for x in range(self.size):
+            for y in range(self.size):
+                pos = (x, y)
+                if pos not in seen_points and self.board(x, y) == 0:
+                    empty, boundaries = self.flood_fill(pos)
+                    if boundaries == (True, False):
+                        self.black_score += len(empty)
+                    elif boundaries == (False, True):
+                        self.white_score += len(empty)
+                    elif boundaries == (True, True):
+                        # Disputed territory, handle accordingly (e.g., allow players to mark dead stones)
+                        self.dead_stone_dispute()
+                seen_points.add(empty)
         #for end of game clear territory calculation
 
     def flood_fill(self, pos: tuple[int, int]) -> tuple[set[tuple[int, int]], tuple[bool, bool]]:
@@ -189,12 +204,11 @@ class Game:
         empty: set[tuple[int, int]] = set()
         stack: list[tuple[int, int]] = [pos]
         boundaries = (False, False)  # (has_black_boundary, has_white_boundary)
+        groups: set[GroupData] = set()
+        seen.add(pos)
 
         while stack:
             current = stack.pop()
-            seen.add(current)
-            if current in seen:
-                continue
             cur_x, cur_y = current
             if self.board[cur_x, cur_y] == 0:
                 empty.add(current)
@@ -203,12 +217,24 @@ class Game:
                     if neighbour not in seen and 0 <= neighbour[0] < self.size and 0 <= neighbour[1] < self.size:
                         stack.append(neighbour)
                         seen.add(neighbour)
+
             else:
                 if self.board[cur_x, cur_y] == 1:
                     boundaries = (True, boundaries[1])
+                    groups.add(self.get_group(current))
                 elif self.board[cur_x, cur_y] == -1:
                     boundaries = (boundaries[0], True)
+                    groups.add(self.get_group(current))
+
         return empty, boundaries
+
+    def dead_stone_dispute(self, groups: set[GroupData]) -> None:
+        '''
+        When the flood fill finds a territory occupied by both players,
+        it lets the players mark which stones are dead and which are alive.
+        '''
+        # highlight the disputed groups and change ui element to allow for agreeing
+        # whether a group is dead or not
 
 
     def game_over(self, winner: int) -> None:
