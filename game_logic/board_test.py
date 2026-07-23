@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from game import Game
+from game_logic.game import Game
 
 #make some example boards. Then run tests on them with the methods I have coded up.
 #maybe I can make the example boards using the methods.
