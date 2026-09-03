@@ -1,7 +1,4 @@
 import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
 import './App.css'
 
 function App() {
@@ -16,8 +13,6 @@ function App() {
       </section>
       <section id="center">
       </section>
-
-      
 
       <section id="next-steps">
         <div id="player1">
