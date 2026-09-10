@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import './App.css'
+import { Board } from './components/Board'
 
 function App() {
   const [count, setCount] = useState(0)
-
+  
   return (
     <>
       <section id="top">
@@ -13,7 +14,7 @@ function App() {
       </section>
       <section id="center">
       </section>
-
+      <Board />
       <section id="next-steps">
         <div id="player1">
           <h2>Player 1</h2>
