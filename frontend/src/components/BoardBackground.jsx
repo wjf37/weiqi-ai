@@ -37,7 +37,7 @@ function BoardBackground({ size, cellSpacing, offset }) {
     const points = getStarPoints(size)
 
     return (
-        <svg viewBox="0 0 100 100" preserveAspectRatio="XMidYMid" role="img">
+        <>
             <title>Go Board</title>
             <rect x="5" y = "5" width="90" height="90" fill="#EBBF6C" stroke="black" strokeWidth="0.3"/>
             {Array.from({ length: size }, (_,i) => {
@@ -74,7 +74,7 @@ function BoardBackground({ size, cellSpacing, offset }) {
                 />
             ))}
             
-        </svg>
+        </>
     )
 }
 
