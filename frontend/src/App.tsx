@@ -1,10 +1,14 @@
-import { useState } from 'react'
+//import { useState } from 'react'
 import './App.css'
-import { Board } from './components/Board'
+import { Board } from './components/Board.tsx'
 
 function App() {
-  const [count, setCount] = useState(0)
-  
+  //const [count, setCount] = useState(0)
+  const gameStateTemp: number[][] = [[0]]
+  const handlePlaceStone = (x: number, y: number): void => {
+    console.log('Placing stone at', x, y);
+  };
+
   return (
     <>
       <section id="top">
@@ -14,7 +18,12 @@ function App() {
       </section>
       <section id="center">
       </section>
-      <Board />
+      <Board 
+        size={19}
+        gameState={gameStateTemp}
+        offset={10}
+        onPlaceStone={handlePlaceStone}
+      />
       <section id="next-steps">
         <div id="player1">
           <h2>Player 1</h2>
@@ -27,7 +36,7 @@ function App() {
       <div className="ticks"></div>
       <section id="spacer"></section>
     </>
-  )
+  );
 }
 
-export default App
+export default App;
