@@ -7,7 +7,7 @@ from typing import List
 
 import numpy as np
 from dataclasses import dataclass
-from turn_logic import PlayTurn
+from backend.game_logic.turn_logic import PlayTurn
 
 @dataclass
 class GroupData:
