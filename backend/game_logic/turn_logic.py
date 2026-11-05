@@ -1,13 +1,7 @@
 '''
 All the methods used in the turn logic of the game.
 '''
-from dataclasses import dataclass
-
-@dataclass
-class GroupData:
-    stones: set[tuple[int, int]]
-    liberties: set[tuple[int, int]]
-    enemy_groups: set[tuple[int, int]]
+from .groupdata import GroupData
 
 DIRECTIONS: tuple[tuple[int,int], ...] = (
         (0,1),
@@ -15,6 +9,7 @@ DIRECTIONS: tuple[tuple[int,int], ...] = (
         (1,0),
         (-1,0)
     )
+
 class PlayTurn:
     def __init__(self,
                  board: list[list[int]],
@@ -31,8 +26,8 @@ class PlayTurn:
         '''
         dead_group = self.groups[pos]
         prisoners = len(dead_group.stones)
-        for stone in dead_group.stones:
-            self.board[stone] = 0
+        for x, y in dead_group.stones:
+            self.board[x][y] = 0
         
         groups_to_update = dead_group.enemy_groups
         for group in groups_to_update:
@@ -43,7 +38,7 @@ class PlayTurn:
 
     def neighbours_check(
             self,
-            pos: tuple[int, int],z
+            pos: tuple[int, int],
         ) -> tuple[
             set[tuple[int, int]],
             set[tuple[int, int]],
@@ -61,9 +56,9 @@ class PlayTurn:
         colour = self.board[x][y]
         opp = -colour
 
-        liberties = set(tuple[int, int])
-        enemies = set(tuple[int, int])
-        friends = set(tuple[int, int])
+        liberties: set[tuple[int, int]] = set()
+        enemies: set[tuple[int, int]] = set()
+        friends: set[tuple[int, int]] = set()
 
         for dx, dy in DIRECTIONS:
             nx, ny = x + dx, y + dy
@@ -89,7 +84,7 @@ class PlayTurn:
         '''
         prev_board_state = self.board.copy()
         new_board_state = [row[:] for row in self.board]  # Create a copy of the board
-        new_board_state[pos[0], pos[1]] = colour
+        new_board_state[pos[0]][pos[1]] = colour
         if new_board_state == prev_board_state:
             return True
         return False
@@ -98,7 +93,7 @@ class PlayTurn:
         '''
         Checks if the move takes all liberties of a group without killing an enemy group
         '''
-        if self.groups[pos].liberties <= 0 and not will_kill:
+        if len(self.groups[pos].liberties) <= 0 and not will_kill:
             return False
         return True
 
@@ -106,13 +101,14 @@ class PlayTurn:
         '''
         Unions two groups together
         '''
-        colour = self.board[pos1]
+        x1, y1 = pos1
+        colour = self.board[x1][y1]
         #union by rank
         root1 = self.stone_group_dict[pos1]
         root2 = self.stone_group_dict[pos2]
 
         if root1 == root2:
-            return
+            return root1
         group1 = self.groups[root1]
         group2 = self.groups[root2]
 
@@ -139,16 +135,16 @@ class PlayTurn:
         '''
         x, y = pos
         cur_group = self.groups[pos]
-
+        size = len(self.board)
         for dx, dy in DIRECTIONS:
             nx, ny = x + dx, y + dy
             ncoords = (nx,ny)
             if (nx < 0 or ny < 0  or
-                nx == self.size or ny == self.size
+                nx == size or ny == size
             ):
                 continue
 
-            if self.board[nx,ny] == 0:
+            if self.board[nx][ny] == 0:
                 cur_group.liberties.add((ncoords))
 
     def return_values(self):

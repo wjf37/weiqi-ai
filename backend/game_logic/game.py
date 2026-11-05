@@ -6,14 +6,9 @@ from enum import Enum, auto
 from typing import List
 
 import numpy as np
-from dataclasses import dataclass
+from .groupdata import GroupData
 from backend.game_logic.turn_logic import PlayTurn
 
-@dataclass
-class GroupData:
-    stones: set[tuple[int, int]]
-    liberties: set[tuple[int, int]]
-    enemy_groups: set[tuple[int, int]]
 
 class GameState(Enum):
     ONGOING = auto()
@@ -42,7 +37,7 @@ class Game:
         self.size = size
         self.board = [[0 for i in range(size)] for j in range(size)]
         self.groups: dict[tuple[int, int], GroupData] = {}
-        self.stone_group_dict: dict[tuple[int, int], tuple[int, int]] = {}
+        self.stone_group_dict: dict[tuple[int, int], tuple[int, int]] = {} #for mapping stones to their group leader
         self.super_ko_counter = 0
         self.prev_game_state = self.board.copy()
         self.white_score = 0
@@ -72,13 +67,13 @@ class Game:
         # Used to check if this turn will kill any enemy groups
         will_kill = False
         # Collect groups to kill this turn for easy removal and prisoner counting
-        dead_groups = set(tuple[int, int])
+        dead_groups: set[tuple[int, int]] = set()
         prisoners = 0
         x, y = pos
 
         if colour not in [1, -1]:
             raise ValueError(f"Invalid colour: {colour}. Must be 1 (black) or -1 (white).")
-        if self.board[x,y] != 0:
+        if self.board[x][y] != 0:
             raise ValueError(f"Point({x}, {y}) is already occupied.")
 
         # Keep a copy of the stone being placed for updating the liberties later
@@ -86,15 +81,15 @@ class Game:
 
         turn = PlayTurn(self.board, self.groups, self.stone_group_dict)
 
-        if turn.ko_check():
+        if turn.ko_check(pos, colour):
             self.super_ko_counter += 1
             if self.super_ko_counter >= 3:
                 self.resign(colour)
                 raise ValueError("Current player loses due to repeated board state (super ko rule).")
             self.reset_turn()
 
-        self.board[x,y] = colour
-        liberties, enemies, friends = turn.neighbours_check()
+        self.board[x][y] = colour
+        liberties, enemies, friends = turn.neighbours_check(pos)
 
         self.groups[pos] = (
             GroupData(stones={pos},
@@ -108,6 +103,7 @@ class Game:
             return
 
         #if there are friends, merge the groups
+        main_group = pos
         for friend in friends:
             main_group = turn.union(pos, friend, new_stone)
 
@@ -115,7 +111,7 @@ class Game:
             enemy_group = self.groups[enemy]
             enemy_group.enemy_groups.add(main_group)
             enemy_group.liberties.discard(pos)
-            if enemy_group.liberties <= 0:
+            if len(enemy_group.liberties) <= 0:
                 will_kill = True
                 dead_groups.add(enemy)
 
@@ -131,7 +127,8 @@ class Game:
         self.prev_game_state = self.board.copy()
 
         self.board, self.groups, self.stone_group_dict = turn.return_values()
-        self.turn_data.append((pos, colour))
+        turn_value = (pos[0], pos[1], colour)
+        self.turn_data.append(turn_value)
 
     def check_in_bounds(self, pos: tuple[int, int]) -> None:
         '''
@@ -167,12 +164,12 @@ class Game:
         '''
         Handles the logic for passing a turn, including checking for consecutive passes to end the game
         '''
-        turn = PlayTurn(self.board, None, None)
+        turn = PlayTurn(self.board, self.groups, self.stone_group_dict)
         self.prev_game_state = self.board.copy()
         self.pass_counter += 1
         if self.pass_counter >= 2:
-            self.state = GameState.FINISHED_SCORE 
-            self.calculate_score()
+            self.state = GameState.FIN_SCORE 
+            self.calculate_score_ja()
 
     def calculate_score_ja(self) -> None:
         '''
@@ -183,7 +180,7 @@ class Game:
         for x in range(self.size):
             for y in range(self.size):
                 pos = (x, y)
-                if pos not in seen_points and self.board(x, y) == 0:
+                if pos not in seen_points and self.board[x][y] == 0:
                     empty, boundaries = self.flood_fill(pos)
                     if boundaries == (True, False):
                         self.black_score += len(empty)
@@ -191,8 +188,9 @@ class Game:
                         self.white_score += len(empty)
                     elif boundaries == (True, True):
                         # Disputed territory, handle accordingly (e.g., allow players to mark dead stones)
-                        self.dead_stone_dispute()
-                seen_points.add(empty)
+                        #self.dead_stone_dispute()
+                        pass
+                    seen_points.update(empty)
         #for end of game clear territory calculation
 
     def flood_fill(self, pos: tuple[int, int]) -> tuple[set[tuple[int, int]], tuple[bool, bool]]:
@@ -204,13 +202,13 @@ class Game:
         empty: set[tuple[int, int]] = set()
         stack: list[tuple[int, int]] = [pos]
         boundaries = (False, False)  # (has_black_boundary, has_white_boundary)
-        groups: set[GroupData] = set()
+        groups: set[tuple[int, int]] = set()
         seen.add(pos)
 
         while stack:
             current = stack.pop()
             cur_x, cur_y = current
-            if self.board[cur_x, cur_y] == 0:
+            if self.board[cur_x][cur_y] == 0:
                 empty.add(current)
                 for dx, dy in DIRECTIONS:
                     neighbour = (cur_x + dx, cur_y + dy)
@@ -219,16 +217,16 @@ class Game:
                         seen.add(neighbour)
 
             else:
-                if self.board[cur_x, cur_y] == 1:
+                if self.board[cur_x][cur_y] == 1:
                     boundaries = (True, boundaries[1])
-                    groups.add(self.get_group(current))
-                elif self.board[cur_x, cur_y] == -1:
+                    groups.add(self.stone_group_dict[current])
+                elif self.board[cur_x][cur_y] == -1:
                     boundaries = (boundaries[0], True)
-                    groups.add(self.get_group(current))
+                    groups.add(self.stone_group_dict[current])
 
         return empty, boundaries
 
-    def dead_stone_dispute(self, groups: set[GroupData]) -> None:
+    def dead_stone_dispute(self, groups: set[tuple[int, int]]) -> None:
         '''
         When the flood fill finds a territory occupied by both players,
         it lets the players mark which stones are dead and which are alive.

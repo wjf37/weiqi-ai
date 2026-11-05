@@ -9,3 +9,6 @@ dependencies = [
     "numpy>=2.4.1",
     "torch>=2.10.0",
 ]
+
+[tool.fastapi]
+entrypoint = "backend.main:app"
