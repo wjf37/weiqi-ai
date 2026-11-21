@@ -26,7 +26,7 @@ class Game:
     '''
     Contains all the game logic in relation to the board
     '''
-    def __init__(self, size: int = 19) -> None:
+    def __init__(self, size: int = 19, komi: float = 6.5) -> None:
         '''
         Initialises the basic necessities of the game such as:
         - board size,
@@ -35,6 +35,7 @@ class Game:
         '''
         #colour 0 = empty | colour 1 = black | colour -1 = white
         self.size = size
+        self.komi = komi
         self.board = [[0 for i in range(size)] for j in range(size)]
         self.groups: dict[tuple[int, int], GroupData] = {}
         self.stone_group_dict: dict[tuple[int, int], tuple[int, int]] = {} #for mapping stones to their group leader
@@ -225,7 +226,7 @@ class Game:
                     groups.add(self.stone_group_dict[current])
 
         return empty, boundaries
-
+    
     def dead_stone_dispute(self, groups: set[tuple[int, int]]) -> None:
         '''
         When the flood fill finds a territory occupied by both players,
@@ -244,3 +245,6 @@ class Game:
         '''
         Allows for reviewing the game after it has ended, using the stored turn data
         '''
+
+    def show_board(self) -> list[list[int]]:
+        return self.board

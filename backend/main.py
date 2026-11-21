@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from backend.routers import games
 
 app = FastAPI()
-
+app.include_router(games.router)
 
 origins = [
     "http://localhost:5173",
