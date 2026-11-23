@@ -5,14 +5,14 @@ Splitting it off into separate files might make more sense later
 from enum import Enum, auto
 from typing import List
 
-import numpy as np
 from .groupdata import GroupData
 from backend.game_logic.turn_logic import PlayTurn
+from exceptions import IllegalMoveError
 
 
 class GameState(Enum):
     ONGOING = auto()
-    FIN_SCORE = auto()
+    SCORE_COUNT = auto()
     FIN_RESIGN = auto()
 
 DIRECTIONS: tuple[tuple[int,int], ...] = (
@@ -38,7 +38,8 @@ class Game:
         self.komi = komi
         self.board = [[0 for i in range(size)] for j in range(size)]
         self.groups: dict[tuple[int, int], GroupData] = {}
-        self.stone_group_dict: dict[tuple[int, int], tuple[int, int]] = {} #for mapping stones to their group leader
+        #for mapping stones to their group leader
+        self.stone_group_dict: dict[tuple[int, int], tuple[int, int]] = {}
         self.super_ko_counter = 0
         self.prev_game_state = self.board.copy()
         self.white_score = 0
@@ -46,9 +47,12 @@ class Game:
         self.pass_counter = 0
         self.current_player = 1
         self.turn_counter = 1
-        #turn data == pos, colour
         self.turn_data: List[tuple[int, int, int]] = []
         self.state = GameState.ONGOING
+        #stores the seen board states as a dict with a tuple of the 
+        #board state and the player that made that state for both
+        #situational and positional superko rules
+        self.seen_states = dict[tuple[tuple[int, ...], ...], int]
 
     @property
     def is_over(self) -> bool:
@@ -56,7 +60,10 @@ class Game:
         Returns True if the game is over, False otherwise
         '''
         return self.state != GameState.ONGOING
-    
+
+    def board_to_tuple(self, board: list[list[int]]) -> tuple[tuple[int, ...], ...]:
+        return tuple(tuple(row) for row in board)
+
     def place_stone(self, pos: tuple[int, int], colour: int) -> None:
         '''
         Logic for placing a stone on the board, with error checking for
@@ -74,7 +81,7 @@ class Game:
 
         if colour not in [1, -1]:
             raise ValueError(f"Invalid colour: {colour}. Must be 1 (black) or -1 (white).")
-        if self.board[x][y] != 0:
+        if self.board[y][x] != 0:
             raise ValueError(f"Point({x}, {y}) is already occupied.")
 
         # Keep a copy of the stone being placed for updating the liberties later
@@ -83,13 +90,10 @@ class Game:
         turn = PlayTurn(self.board, self.groups, self.stone_group_dict)
 
         if turn.ko_check(pos, colour):
-            self.super_ko_counter += 1
-            if self.super_ko_counter >= 3:
-                self.resign(colour)
-                raise ValueError("Current player loses due to repeated board state (super ko rule).")
             self.reset_turn()
+            raise IllegalMoveError("This move violates the ko rule. You must play elsewhere or pass first.")
 
-        self.board[x][y] = colour
+        self.board[y][x] = colour
         liberties, enemies, friends = turn.neighbours_check(pos)
 
         self.groups[pos] = (
@@ -128,7 +132,7 @@ class Game:
         self.prev_game_state = self.board.copy()
 
         self.board, self.groups, self.stone_group_dict = turn.return_values()
-        turn_value = (pos[0], pos[1], colour)
+        turn_value = (x, y, colour)
         self.turn_data.append(turn_value)
 
     def check_in_bounds(self, pos: tuple[int, int]) -> None:
@@ -146,7 +150,6 @@ class Game:
         self.current_player = -self.current_player
         self.turn_counter += 1
         self.pass_counter = 0
-        self.super_ko_counter = 0
 
     def resign(self, colour: int) -> None:
         '''
@@ -169,7 +172,7 @@ class Game:
         self.prev_game_state = self.board.copy()
         self.pass_counter += 1
         if self.pass_counter >= 2:
-            self.state = GameState.FIN_SCORE 
+            self.state = GameState.SCORE_COUNT 
             self.calculate_score_ja()
 
     def calculate_score_ja(self) -> None:
@@ -181,8 +184,8 @@ class Game:
         for x in range(self.size):
             for y in range(self.size):
                 pos = (x, y)
-                if pos not in seen_points and self.board[x][y] == 0:
-                    empty, boundaries = self.flood_fill(pos)
+                if pos not in seen_points and self.board[y][x] == 0:
+                    empty, boundaries = self.flood_fill(x, y)
                     if boundaries == (True, False):
                         self.black_score += len(empty)
                     elif boundaries == (False, True):
@@ -194,11 +197,12 @@ class Game:
                     seen_points.update(empty)
         #for end of game clear territory calculation
 
-    def flood_fill(self, pos: tuple[int, int]) -> tuple[set[tuple[int, int]], tuple[bool, bool]]:
+    def flood_fill(self, x: int, y: int) -> tuple[set[tuple[int, int]], tuple[bool, bool]]:
         '''
         Flood fill algorithm to determine the territory controlled by a player.
         Returns a set of positions that are part of the territory and a tuple indicating boundary colors.
         '''
+        pos = (x, y)
         seen: set[tuple[int, int]] = set()
         empty: set[tuple[int, int]] = set()
         stack: list[tuple[int, int]] = [pos]
@@ -218,10 +222,10 @@ class Game:
                         seen.add(neighbour)
 
             else:
-                if self.board[cur_x][cur_y] == 1:
+                if self.board[cur_y][cur_x] == 1:
                     boundaries = (True, boundaries[1])
                     groups.add(self.stone_group_dict[current])
-                elif self.board[cur_x][cur_y] == -1:
+                elif self.board[cur_y][cur_x] == -1:
                     boundaries = (boundaries[0], True)
                     groups.add(self.stone_group_dict[current])
 

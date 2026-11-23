@@ -53,15 +53,16 @@ def create_game(
         player1_id=game_settings.player1_id,
     )
 
+#Not necessary for the prototype so it is only going to be very basic
 @router.post(
     "/{game_id}/join",
     response_model=GameResponse
 )
-#Not necessary for the prototype so it is only going to be very basic
 def join_game(
     player_id: JoinGameReq,
     session: GameDependency
-):  
+) -> GameResponse:  
+    #if player already part of session
     if player_id in (session.player1_id, session.player2_id):
         return session_to_response(session)
     #check if p2 exists for said match
@@ -76,10 +77,23 @@ def join_game(
     
 
 @router.post(
-    "/{game_id}/move"
+    "/{game_id}/move",
+    response_model=GameResponse
 )
 def make_move(
     move_request: MoveRequest,
     existing_game: GameDependency
-):
+) -> GameResponse:
+    #checks at this point:
+    #existing game checked
+    #correct player to check
+    if existing_game.game.current_player != move_request.colour:
+        raise HTTPException(
+            status_code=409,
+            detail="Not your turn!"
+        )
+    #send move request to backend
+    #see if any problems get passed back e.g. illegal move
+    #occupied spaces should be handled at frontend
+    existing_game.game.place_stone((move_request.x, move_request.y),move_request.colour)
     pass

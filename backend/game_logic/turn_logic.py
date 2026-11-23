@@ -2,6 +2,7 @@
 All the methods used in the turn logic of the game.
 '''
 from .groupdata import GroupData
+from exceptions import IllegalMoveError
 
 DIRECTIONS: tuple[tuple[int,int], ...] = (
         (0,1),
@@ -12,22 +13,22 @@ DIRECTIONS: tuple[tuple[int,int], ...] = (
 
 class PlayTurn:
     def __init__(self,
-                 board: list[list[int]],
-                 groups: dict[tuple[int, int], GroupData],
-                 stone_group_dict: dict[tuple[int, int], tuple[int, int]],
-                ):
+        board: list[list[int]],
+        groups: dict[tuple[int, int], GroupData],
+        stone_group_dict: dict[tuple[int, int], tuple[int, int]],
+    ):
         self.board = board
         self.groups = groups
         self.stone_group_dict = stone_group_dict
 
-    def remove_stones(self, pos: tuple[int, int]) -> int:
+    def remove_stones(self, pos: tuple[int,int]) -> int:
         '''
         Logic for removing a group from the board + cleaup
         '''
         dead_group = self.groups[pos]
         prisoners = len(dead_group.stones)
         for x, y in dead_group.stones:
-            self.board[x][y] = 0
+            self.board[y][x] = 0
         
         groups_to_update = dead_group.enemy_groups
         for group in groups_to_update:
@@ -37,13 +38,13 @@ class PlayTurn:
         return prisoners
 
     def neighbours_check(
-            self,
-            pos: tuple[int, int],
-        ) -> tuple[
-            set[tuple[int, int]],
-            set[tuple[int, int]],
-            set[tuple[int, int]]
-        ]:
+        self,
+        pos: tuple[int, int],
+    ) -> tuple[
+        set[tuple[int, int]],
+        set[tuple[int, int]],
+        set[tuple[int, int]]
+    ]:
         '''
         Used to check the neighbouring positions of a stone, to determine the liberties,
         and the enemy and friendly groups next to the stone and how they will be affected
@@ -53,7 +54,7 @@ class PlayTurn:
         size = len(self.board)
         x, y = pos
         
-        colour = self.board[x][y]
+        colour = self.board[y][x]
         opp = -colour
 
         liberties: set[tuple[int, int]] = set()
@@ -67,9 +68,9 @@ class PlayTurn:
                 nx == size or ny == size
             ):
                 continue
-            if self.board[nx][ny] == colour:
+            if self.board[ny][nx] == colour:
                 friends.add(self.stone_group_dict[(nx,ny)])
-            elif self.board[nx][ny] == opp:
+            elif self.board[ny][nx] == opp:
                 enemies.add(self.stone_group_dict[(nx,ny)])
             else:
                 liberties.add((ncoords))
@@ -77,19 +78,36 @@ class PlayTurn:
         return liberties, enemies, friends
 
 
-    def ko_check(self, pos: tuple[int, int], colour: int) -> bool:
+    def is_pos_ko(
+        self,
+        colour: int,
+        prev_states: dict[tuple[tuple[int, ...], ...], int],
+        new_state: tuple[tuple[int, ...], ...]
+    ) -> bool:
         '''
-        Checks that a move does not violate the ko rule y returning to the previous board state
-        and also checks for super ko rule violation where the board state is repeated three times
+        Checks that a move does not violate the positional super ko rule by checking
+        the board state post move against all past board states
         '''
-        prev_board_state = self.board.copy()
-        new_board_state = [row[:] for row in self.board]  # Create a copy of the board
-        new_board_state[pos[0]][pos[1]] = colour
-        if new_board_state == prev_board_state:
+        if new_state in prev_states:
             return True
         return False
 
-    def pass_suicide_check(self, pos: tuple[int, int], will_kill: bool) -> bool:
+    def is_sit_ko(
+        self,
+        colour: int,
+        prev_states: dict[tuple[tuple[int, ...], ...], int],
+        new_state: tuple[tuple[int, ...], ...]
+    ) -> bool:
+        '''
+        Checks that a move does not violate the situational super ko rule by checking
+        the board state post move against all past board states then checking if it 
+        was by the same player
+        '''
+        player = prev_states.get(new_state, 0)
+        return colour == player
+
+    
+    def pass_suicide_check(self, pos: tuple[int,int], will_kill: bool) -> bool:
         '''
         Checks if the move takes all liberties of a group without killing an enemy group
         '''
@@ -101,8 +119,6 @@ class PlayTurn:
         '''
         Unions two groups together
         '''
-        x1, y1 = pos1
-        colour = self.board[x1][y1]
         #union by rank
         root1 = self.stone_group_dict[pos1]
         root2 = self.stone_group_dict[pos2]
@@ -144,7 +160,7 @@ class PlayTurn:
             ):
                 continue
 
-            if self.board[nx][ny] == 0:
+            if self.board[ny][nx] == 0:
                 cur_group.liberties.add((ncoords))
 
     def return_values(self):
