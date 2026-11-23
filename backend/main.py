@@ -4,6 +4,7 @@ from backend.routers import games
 
 app = FastAPI()
 app.include_router(games.router)
+app.state.sessions = {}
 
 origins = [
     "http://localhost:5173",

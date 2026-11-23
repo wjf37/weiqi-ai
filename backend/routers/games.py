@@ -1,7 +1,8 @@
 from uuid import uuid4 #temp until database 
-from fastapi import APIRouter, Depends
-from backend.schemas import GameResponse, MoveRequest, CreateGameReq
-from backend.dependencies import get_game
+from fastapi import APIRouter, Depends, HTTPException
+from backend.schemas import GameResponse, MoveRequest, CreateGameReq, JoinGameReq
+from models.game_session import Game_Session
+from backend.dependencies import get_game, get_games
 from backend.game_logic.game import Game
 from typing import Annotated
 
@@ -10,12 +11,40 @@ router = APIRouter(
     tags=["Games"]
 )
 
-GameDependency = Annotated[Game, Depends(get_game)]
+GameDependency = Annotated[Game_Session, Depends(get_game)]
+SessionsDependency = Annotated[dict, Depends(get_games)]
 
-@router.post("", response_model=GameResponse, response_model_exclude_none=True, status_code=201)
-def create_game(game_settings: CreateGameReq) -> GameResponse:
+def session_to_response(session: Game_Session) -> GameResponse:
+    return GameResponse(
+        game_id = session.game_id,
+        game_board = session.game.board,
+        player1_id = session.player1_id,
+        player2_id = session.player2_id,
+        game_status = session.game.state,
+        next_player = session.game.current_player
+    )
+
+@router.post(
+    "",
+    response_model=GameResponse,
+    response_model_exclude_none=True,
+    status_code=201
+)
+def create_game(
+    game_settings: CreateGameReq,
+    games: SessionsDependency
+) -> GameResponse:
     game_id: str = str(uuid4())
-    game = Game(size=game_settings.board_size, komi=game_settings.komi) 
+    game = Game(
+        size=game_settings.board_size,
+        komi=game_settings.komi
+    )
+    session = Game_Session(
+        game_id=game_id,
+        game=game,
+        player1_id=game_settings.player1_id
+    )
+    games[game_id] = session
     return GameResponse(
         game_id = game_id,
         game_board = game.board,
@@ -24,10 +53,33 @@ def create_game(game_settings: CreateGameReq) -> GameResponse:
         player1_id=game_settings.player1_id,
     )
 
-@router.post("/join/{game_id}")
-def join_game(game_id: int):
-    pass
+@router.post(
+    "/{game_id}/join",
+    response_model=GameResponse
+)
+#Not necessary for the prototype so it is only going to be very basic
+def join_game(
+    player_id: JoinGameReq,
+    session: GameDependency
+):  
+    if player_id in (session.player1_id, session.player2_id):
+        return session_to_response(session)
+    #check if p2 exists for said match
+    if session.player2_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Game is full!",
+        )
+    #join game
+    session.player2_id = player_id.player_id
+    return session_to_response(session)
+    
 
-@router.post("/{game_id}/move")
-def make_move(game_id: int, move_request: MoveRequest):
+@router.post(
+    "/{game_id}/move"
+)
+def make_move(
+    move_request: MoveRequest,
+    existing_game: GameDependency
+):
     pass

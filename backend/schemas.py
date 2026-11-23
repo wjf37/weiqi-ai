@@ -15,6 +15,9 @@ class GameResponse(BaseModel):
     next_player: int
     game_status: GameState
 
+class JoinGameReq(BaseModel):
+    player_id: int
+    
 class MoveRequest(BaseModel):
     x: int
     y: int
