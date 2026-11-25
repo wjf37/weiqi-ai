@@ -4,9 +4,10 @@ Splitting it off into separate files might make more sense later
 '''
 from enum import Enum, auto
 from typing import List
+import copy
 
 from .groupdata import GroupData
-from backend.game_logic.turn_logic import PlayTurn
+from backend.game_logic import turn_logic as turn
 from exceptions import IllegalMoveError
 
 
@@ -41,7 +42,6 @@ class Game:
         #for mapping stones to their group leader
         self.stone_group_dict: dict[tuple[int, int], tuple[int, int]] = {}
         self.super_ko_counter = 0
-        self.prev_game_state = self.board.copy()
         self.white_score = 0
         self.black_score = 0
         self.pass_counter = 0
@@ -52,7 +52,7 @@ class Game:
         #stores the seen board states as a dict with a tuple of the 
         #board state and the player that made that state for both
         #situational and positional superko rules
-        self.seen_states = dict[tuple[tuple[int, ...], ...], int]
+        self.prev_states: dict[tuple[tuple[int, ...], ...], int] = {}
 
     @property
     def is_over(self) -> bool:
@@ -76,7 +76,6 @@ class Game:
         will_kill = False
         # Collect groups to kill this turn for easy removal and prisoner counting
         dead_groups: set[tuple[int, int]] = set()
-        prisoners = 0
         x, y = pos
 
         if colour not in [1, -1]:
@@ -87,22 +86,21 @@ class Game:
         # Keep a copy of the stone being placed for updating the liberties later
         new_stone: tuple[int, int] = pos
 
-        turn = PlayTurn(self.board, self.groups, self.stone_group_dict)
-
-        if turn.ko_check(pos, colour):
-            self.reset_turn()
-            raise IllegalMoveError("This move violates the ko rule. You must play elsewhere or pass first.")
+        #temporary mutable board state, don't change original if move is illegal
+        temp_board = copy.deepcopy(self.board)
+        temp_groups = copy.deepcopy(self.groups)
+        temp_sg_dict = copy.deepcopy(self.stone_group_dict)
 
         self.board[y][x] = colour
-        liberties, enemies, friends = turn.neighbours_check(pos)
+        liberties, enemies, friends = turn.neighbours_check(pos, temp_board, temp_sg_dict)
 
-        self.groups[pos] = (
+        temp_groups[pos] = (
             GroupData(stones={pos},
                         liberties=liberties,
                         enemy_groups=enemies
                     ))
 
-        self.stone_group_dict[pos] = pos
+        temp_sg_dict[pos] = pos
 
         if not enemies and not friends:
             return
@@ -110,30 +108,48 @@ class Game:
         #if there are friends, merge the groups
         main_group = pos
         for friend in friends:
-            main_group = turn.union(pos, friend, new_stone)
+            main_group = turn.union(pos, friend, new_stone, temp_groups, temp_sg_dict)
 
         for enemy in enemies:
-            enemy_group = self.groups[enemy]
+            enemy_group = temp_groups[enemy]
             enemy_group.enemy_groups.add(main_group)
             enemy_group.liberties.discard(pos)
             if len(enemy_group.liberties) <= 0:
                 will_kill = True
                 dead_groups.add(enemy)
 
-        if not turn.pass_suicide_check(main_group, will_kill):
-            self.reset_turn()
         for group in dead_groups:
-            prisoners += turn.remove_stones(group)
+            prisoners += turn.remove_stones(group, temp_board, temp_groups)
+
+        new_state = self.board_to_tuple(temp_board)
+
+        #if ko check does not pass then send exception
+        if turn.is_pos_ko(self.prev_states, new_state):
+            raise IllegalMoveError("This move violates the ko rule. You must play elsewhere or pass first.")
+
+        #if suicide check does not pass send exception
+        if not turn.is_suicide(main_group, will_kill, temp_groups):
+            raise IllegalMoveError("This move violates the suicide rule. You must play elsewhere or pass first.")
+        
+        #only reach this point when the moves are not found to be illegal
+        self.board = copy.deepcopy(temp_board)
+        self.groups = copy.deepcopy(temp_groups)
+        self.stone_group_dict = copy.deepcopy(temp_sg_dict)
+
+        #add the successful move to game history with the player who made it for situational ko checks 
+        self.prev_states[new_state] = colour
+
         if colour == 1:
             self.black_score += prisoners
         else:
             self.white_score += prisoners
 
-        self.prev_game_state = self.board.copy()
-
-        self.board, self.groups, self.stone_group_dict = turn.return_values()
         turn_value = (x, y, colour)
         self.turn_data.append(turn_value)
+        self.current_player = -self.current_player
+        self.turn_counter += 1
+        self.pass_counter = 0
+
 
     def check_in_bounds(self, pos: tuple[int, int]) -> None:
         '''
@@ -143,14 +159,6 @@ class Game:
         if pos[0] not in range(self.size) or pos[1] not in range(self.size):
             raise ValueError(f"Point ({pos[0]}, {pos[1]}) is out of bounds.")
 
-    def next_turn(self) -> None:
-        '''
-        Moves to the next turn.
-        '''
-        self.current_player = -self.current_player
-        self.turn_counter += 1
-        self.pass_counter = 0
-
     def resign(self, colour: int) -> None:
         '''
         Ends the game, makes the other player the winner
@@ -158,17 +166,18 @@ class Game:
         self.game_over(-colour)
         self.state = GameState.FIN_RESIGN
 
-    def reset_turn(self) -> None:
+    def reset_turn(self, temp_board, temp_groups, temp_sg_dict) -> None:
         '''
         Resets the turn to the previous state, used for undoing moves or handling illegal moves
         '''
-        self.board = self.prev_game_state.copy()
+        self.board = temp_board
+        self.groups = temp_groups
+        self.stone_group_dict = temp_sg_dict
 
     def pass_turn(self) -> None:
         '''
         Handles the logic for passing a turn, including checking for consecutive passes to end the game
         '''
-        turn = PlayTurn(self.board, self.groups, self.stone_group_dict)
         self.prev_game_state = self.board.copy()
         self.pass_counter += 1
         if self.pass_counter >= 2:

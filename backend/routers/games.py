@@ -96,4 +96,5 @@ def make_move(
     #see if any problems get passed back e.g. illegal move
     #occupied spaces should be handled at frontend
     existing_game.game.place_stone((move_request.x, move_request.y),move_request.colour)
+    #once move request goes through send the new board state back
     pass
