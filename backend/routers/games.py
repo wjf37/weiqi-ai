@@ -1,10 +1,11 @@
 from uuid import uuid4 #temp until database 
 from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
+from backend.models.game_session import Game_Session
 from backend.schemas import GameResponse, MoveRequest, CreateGameReq, JoinGameReq
-from models.game_session import Game_Session
 from backend.dependencies import get_game, get_games
 from backend.game_logic.game import Game
-from typing import Annotated
+from backend.game_logic.exceptions import MoveRejected
 
 router = APIRouter(
     prefix="/games",
@@ -95,6 +96,20 @@ def make_move(
     #send move request to backend
     #see if any problems get passed back e.g. illegal move
     #occupied spaces should be handled at frontend
-    existing_game.game.place_stone((move_request.x, move_request.y),move_request.colour)
+    rejection_reason = existing_game.game.place_stone((move_request.x, move_request.y),move_request.colour)
+
+    if rejection_reason is not None:
+        status_code = 422 if rejection_reason is MoveRejected.OUT_OF_BOUNDS else 409
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": rejection_reason.value}
+        )
     #once move request goes through send the new board state back
-    pass
+    return GameResponse(
+        game_id=existing_game.game_id,
+        game_board=existing_game.game.board,
+        player1_id=existing_game.player1_id,
+        player2_id=existing_game.player2_id,
+        next_player=existing_game.game.current_player,
+        game_status=existing_game.game.state
+    )

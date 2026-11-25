@@ -1,6 +1,6 @@
 from typing import Literal 
 from pydantic import BaseModel
-from backend.game_logic.game import Game, GameState
+from backend.game_logic.game import GameState
 
 class CreateGameReq(BaseModel):
     board_size: Literal[9, 13, 19] = 19

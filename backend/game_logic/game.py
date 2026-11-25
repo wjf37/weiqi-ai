@@ -8,7 +8,7 @@ import copy
 
 from .groupdata import GroupData
 from backend.game_logic import turn_logic as turn
-from exceptions import IllegalMoveError
+from exceptions import MoveRejected
 
 
 class GameState(Enum):
@@ -64,13 +64,13 @@ class Game:
     def board_to_tuple(self, board: list[list[int]]) -> tuple[tuple[int, ...], ...]:
         return tuple(tuple(row) for row in board)
 
-    def place_stone(self, pos: tuple[int, int], colour: int) -> None:
+    def place_stone(self, pos: tuple[int, int], colour: int) -> MoveRejected | None:
         '''
         Logic for placing a stone on the board, with error checking for
         illegal moves. Start of the sequence of checks and updates for placing a stone.
         '''
         if self.is_over:
-            raise ValueError("Game is over, cannot place stone.")
+            return MoveRejected.GAME_OVER
         prisoners = 0
         # Used to check if this turn will kill any enemy groups
         will_kill = False
@@ -78,10 +78,14 @@ class Game:
         dead_groups: set[tuple[int, int]] = set()
         x, y = pos
 
+        if x >= self.size or y >= self.size:
+            return MoveRejected.OUT_OF_BOUNDS
         if colour not in [1, -1]:
-            raise ValueError(f"Invalid colour: {colour}. Must be 1 (black) or -1 (white).")
+            return MoveRejected.INVALID_COLOUR
+            #raise ValueError(f"Invalid colour: {colour}. Must be 1 (black) or -1 (white).")
         if self.board[y][x] != 0:
-            raise ValueError(f"Point({x}, {y}) is already occupied.")
+            return MoveRejected.OCCUPIED_POINT
+            #raise ValueError(f"Point({x}, {y}) is already occupied.")
 
         # Keep a copy of the stone being placed for updating the liberties later
         new_stone: tuple[int, int] = pos
@@ -101,9 +105,6 @@ class Game:
                     ))
 
         temp_sg_dict[pos] = pos
-
-        if not enemies and not friends:
-            return
 
         #if there are friends, merge the groups
         main_group = pos
@@ -125,11 +126,13 @@ class Game:
 
         #if ko check does not pass then send exception
         if turn.is_pos_ko(self.prev_states, new_state):
-            raise IllegalMoveError("This move violates the ko rule. You must play elsewhere or pass first.")
+            return MoveRejected.KO
+            #raise IllegalMoveError("This move violates the ko rule. You must play elsewhere or pass first.")
 
         #if suicide check does not pass send exception
         if not turn.is_suicide(main_group, will_kill, temp_groups):
-            raise IllegalMoveError("This move violates the suicide rule. You must play elsewhere or pass first.")
+            return MoveRejected.SUICIDE
+            #raise IllegalMoveError("This move violates the suicide rule. You must play elsewhere or pass first.")
         
         #only reach this point when the moves are not found to be illegal
         self.board = copy.deepcopy(temp_board)
@@ -258,6 +261,4 @@ class Game:
         '''
         Allows for reviewing the game after it has ended, using the stored turn data
         '''
-
-    def show_board(self) -> list[list[int]]:
-        return self.board
+    
