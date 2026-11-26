@@ -12,6 +12,7 @@ class GameResponse(BaseModel):
     game_board: list[list[int]]
     player1_id: int | None = None #For non-registered users playing locally
     player2_id: int | None = None
+    turn_num: int
     next_player: int
     game_status: GameState
 
@@ -21,4 +22,7 @@ class JoinGameReq(BaseModel):
 class MoveRequest(BaseModel):
     x: int
     y: int
+    colour: int
+
+class PassReq(BaseModel):
     colour: int

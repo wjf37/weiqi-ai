@@ -124,7 +124,6 @@ class Game:
 
         new_state = self.board_to_tuple(temp_board)
 
-        #if ko check does not pass then send exception
         if turn.is_pos_ko(self.prev_states, new_state):
             return MoveRejected.KO
             #raise IllegalMoveError("This move violates the ko rule. You must play elsewhere or pass first.")
@@ -177,12 +176,17 @@ class Game:
         self.groups = temp_groups
         self.stone_group_dict = temp_sg_dict
 
-    def pass_turn(self) -> None:
+    def pass_turn(self, colour: int) -> MoveRejected | None:
         '''
         Handles the logic for passing a turn, including checking for consecutive passes to end the game
         '''
-        self.prev_game_state = self.board.copy()
+        if colour != self.current_player:
+            return MoveRejected.WRONG_PLAYER
         self.pass_counter += 1
+        self.current_player = -self.current_player
+        turn_value = (-1, -1, colour) #using -1,-1 to signify pass
+        self.turn_data.append(turn_value)
+        self.turn_counter += 1
         if self.pass_counter >= 2:
             self.state = GameState.SCORE_COUNT 
             self.calculate_score_ja()
@@ -261,4 +265,4 @@ class Game:
         '''
         Allows for reviewing the game after it has ended, using the stored turn data
         '''
-    
+

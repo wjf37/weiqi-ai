@@ -2,7 +2,7 @@ from uuid import uuid4 #temp until database
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Annotated
 from backend.models.game_session import Game_Session
-from backend.schemas import GameResponse, MoveRequest, CreateGameReq, JoinGameReq
+from backend.schemas import GameResponse, MoveRequest, CreateGameReq, JoinGameReq, PassReq
 from backend.dependencies import get_game, get_games
 from backend.game_logic.game import Game
 from backend.game_logic.exceptions import MoveRejected
@@ -22,6 +22,7 @@ def session_to_response(session: Game_Session) -> GameResponse:
         player1_id = session.player1_id,
         player2_id = session.player2_id,
         game_status = session.game.state,
+        turn_num= session.game.turn_counter,
         next_player = session.game.current_player
     )
 
@@ -51,6 +52,7 @@ def create_game(
         game_board = game.board,
         next_player = game.current_player,
         game_status=game.state,
+        turn_num= game.turn_counter,
         player1_id=game_settings.player1_id,
     )
 
@@ -101,15 +103,22 @@ def make_move(
     if rejection_reason is not None:
         status_code = 422 if rejection_reason is MoveRejected.OUT_OF_BOUNDS else 409
         raise HTTPException(
-            status_code=409,
+            status_code=status_code,
             detail={"reason": rejection_reason.value}
         )
     #once move request goes through send the new board state back
-    return GameResponse(
-        game_id=existing_game.game_id,
-        game_board=existing_game.game.board,
-        player1_id=existing_game.player1_id,
-        player2_id=existing_game.player2_id,
-        next_player=existing_game.game.current_player,
-        game_status=existing_game.game.state
-    )
+    return session_to_response(existing_game)
+
+@router.post(
+    "/{game_id}/pass",
+    response_model=GameResponse
+)
+def pass_turn(pass_req: PassReq, existing_game: GameDependency) -> GameResponse:
+    rejection_reason = existing_game.game.pass_turn(pass_req.colour)
+    if rejection_reason:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": rejection_reason.value}
+        )
+    
+    return session_to_response(existing_game)
