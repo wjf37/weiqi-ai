@@ -8,7 +8,7 @@ import copy
 
 from .groupdata import GroupData
 from backend.game_logic import turn_logic as turn
-from exceptions import MoveRejected
+from exceptions import MoveRejected, Error
 
 
 class GameState(Enum):
@@ -27,7 +27,7 @@ class Game:
     '''
     Contains all the game logic in relation to the board
     '''
-    def __init__(self, size: int = 19, komi: float = 6.5) -> None:
+    def __init__(self, size: int = 19, komi: float = 6.5, scoring_method: int = 0) -> None:
         '''
         Initialises the basic necessities of the game such as:
         - board size,
@@ -42,17 +42,23 @@ class Game:
         #for mapping stones to their group leader
         self.stone_group_dict: dict[tuple[int, int], tuple[int, int]] = {}
         self.super_ko_counter = 0
-        self.white_score = 0
         self.black_score = 0
+        self.white_score = komi
+        self.black_stones_played = 0
+        self.white_stones_played = 0
+        self.black_captures = 0
+        self.white_captures = 0
         self.pass_counter = 0
         self.current_player = 1
         self.turn_counter = 1
         self.turn_data: List[tuple[int, int, int]] = []
         self.state = GameState.ONGOING
+        self.scoring_method = 0 # 0 for japanese scoring, 1 for chinese scoring
         #stores the seen board states as a dict with a tuple of the 
         #board state and the player that made that state for both
         #situational and positional superko rules
         self.prev_states: dict[tuple[tuple[int, ...], ...], int] = {}
+        self.winner = 0
 
     @property
     def is_over(self) -> bool:
@@ -142,9 +148,11 @@ class Game:
         self.prev_states[new_state] = colour
 
         if colour == 1:
-            self.black_score += prisoners
+            self.black_captures += prisoners
+            self.black_stones_played += 1
         else:
-            self.white_score += prisoners
+            self.white_captures += prisoners
+            self.white_stones_played += 1
 
         turn_value = (x, y, colour)
         self.turn_data.append(turn_value)
@@ -161,12 +169,12 @@ class Game:
         if pos[0] not in range(self.size) or pos[1] not in range(self.size):
             raise ValueError(f"Point ({pos[0]}, {pos[1]}) is out of bounds.")
 
-    def resign(self, colour: int) -> None:
+    def resign(self, resigning_colour: int) -> None:
         '''
         Ends the game, makes the other player the winner
         '''
-        self.game_over(-colour)
         self.state = GameState.FIN_RESIGN
+        winner = -resigning_colour
 
     def reset_turn(self, temp_board, temp_groups, temp_sg_dict) -> None:
         '''
@@ -188,13 +196,13 @@ class Game:
         self.turn_data.append(turn_value)
         self.turn_counter += 1
         if self.pass_counter >= 2:
-            self.state = GameState.SCORE_COUNT 
-            self.calculate_score_ja()
+            self.state = GameState.SCORE_COUNT
+            self.game_over()
 
     def calculate_score_ja(self) -> None:
         '''
-        Calculates the score for both players at the end of the game using Japanese scoring,
-        including territory and prisoners
+        Calculates the score according to Japanese scoring,
+        counts empty points surrounded minus dead stones
         '''
         seen_points: set[tuple[int, int]] = set()
         for x in range(self.size):
@@ -211,7 +219,11 @@ class Game:
                         #self.dead_stone_dispute()
                         pass
                     seen_points.update(empty)
+
+        self.black_score -= self.white_captures
+        self.white_score -= self.black_captures 
         #for end of game clear territory calculation
+        
 
     def flood_fill(self, x: int, y: int) -> tuple[set[tuple[int, int]], tuple[bool, bool]]:
         '''
@@ -256,10 +268,23 @@ class Game:
         # whether a group is dead or not
 
 
-    def game_over(self, winner: int) -> None:
+    def game_over(self) -> Error | None:
         '''
         Ends the game, calculates score and declares the winner. Saves the turn data.
         ''' 
+        self.calculate_score_ja()
+        #for chinese score calculation
+        if self.scoring_method == 1:
+            self.black_score += self.black_stones_played
+            self.white_score += self.white_stones_played
+
+        if self.black_score > self.white_score:
+            winner = 1
+        elif self.black_score < self.white_score:
+            winner = -1
+        else:
+            return Error.ERROR
+        #save turn data
     
     def review(self) -> None:
         '''

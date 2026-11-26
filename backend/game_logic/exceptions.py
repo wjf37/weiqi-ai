@@ -9,6 +9,5 @@ class MoveRejected(StrEnum):
     INVALID_COLOUR = "invalid_colour"
     OCCUPIED_POINT = "occupied"
 
-
-class IllegalMoveError(Exception):
-    pass
+class Error(StrEnum):
+    ERROR = "error"

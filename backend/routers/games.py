@@ -57,14 +57,8 @@ def create_game(
     )
 
 #Not necessary for the prototype so it is only going to be very basic
-@router.post(
-    "/{game_id}/join",
-    response_model=GameResponse
-)
-def join_game(
-    player_id: JoinGameReq,
-    session: GameDependency
-) -> GameResponse:  
+@router.post("/{game_id}/join", response_model=GameResponse)
+def join_game(player_id: JoinGameReq, session: GameDependency) -> GameResponse:  
     #if player already part of session
     if player_id in (session.player1_id, session.player2_id):
         return session_to_response(session)
@@ -79,14 +73,8 @@ def join_game(
     return session_to_response(session)
     
 
-@router.post(
-    "/{game_id}/move",
-    response_model=GameResponse
-)
-def make_move(
-    move_request: MoveRequest,
-    existing_game: GameDependency
-) -> GameResponse:
+@router.post("/{game_id}/move", response_model=GameResponse)
+def make_move(move_request: MoveRequest, existing_game: GameDependency) -> GameResponse:
     #checks at this point:
     #existing game checked
     #correct player to check
@@ -109,10 +97,7 @@ def make_move(
     #once move request goes through send the new board state back
     return session_to_response(existing_game)
 
-@router.post(
-    "/{game_id}/pass",
-    response_model=GameResponse
-)
+@router.post("/{game_id}/pass", response_model=GameResponse)
 def pass_turn(pass_req: PassReq, existing_game: GameDependency) -> GameResponse:
     rejection_reason = existing_game.game.pass_turn(pass_req.colour)
     if rejection_reason:
@@ -122,3 +107,7 @@ def pass_turn(pass_req: PassReq, existing_game: GameDependency) -> GameResponse:
         )
     
     return session_to_response(existing_game)
+
+@router.post("/{game_id}/resign")
+def resign():
+    pass
